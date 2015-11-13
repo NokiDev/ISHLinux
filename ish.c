@@ -143,7 +143,11 @@ int commande_interne(char** cmd, int * n)
 	}
 	if (strcmp(cmd[*n],"pid") == 0) {
 	(*n)++;
-		printf("%i\n",getpid());
+		if (cmd[*n] != NULL && strcmp(cmd[*n], "-a") == 0) {
+			printf("PID: %i\tPPID: %i\tUID: %i\tSID:%i\n",getpid(), getppid(), getuid(), getsid(getpid()));
+		} else {
+	 		printf("%i\n",getpid());
+		}
 		return 1;
 	}
 	if(strcmp(cmd[*n],"env") == 0){        
