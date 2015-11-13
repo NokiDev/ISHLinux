@@ -19,7 +19,7 @@
 
 extern char ** environ;
 
-int RUN=1; /* RUN doit être mis a zero pour stopper le shell */
+int RUN=1; /* RUN doit Ãªtre mis a zero pour stopper le shell */
 char ** env;
 char buf[LBUF];
 char test[LBUF];
@@ -139,6 +139,11 @@ int commande_interne(char** cmd, int * n)
 		rep = getcwd(NULL,0);
 		printf("%s\n",rep);
 		free(rep);
+		return 1;
+	}
+	if (strcmp(cmd[*n],"pid") == 0) {
+	(*n)++;
+		printf("%i\n",getpid());
 		return 1;
 	}
 	if(strcmp(cmd[*n],"env") == 0){        
