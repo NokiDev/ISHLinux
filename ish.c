@@ -144,7 +144,7 @@ int commande_interne(char** cmd, int * n)
 	if (strcmp(cmd[*n],"pid") == 0) {
 	(*n)++;
 		if (cmd[*n] != NULL && strcmp(cmd[*n], "-a") == 0) {
-			printf("PID: %i\tPPID: %i\tUID: %i\tSID:%i\n", getpid(), getppid(), getuid(), getsid(getpid()));
+			printf("PID: %i\tPPID: %i\tUID: %i\tSID: %i\n", getpid(), getppid(), getuid(), getsid(getpid()));
 		} else {
 	 		printf("%i\n", getpid());
 		}
