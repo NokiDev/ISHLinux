@@ -11,7 +11,7 @@
 
 #include "tools.h"
 
-#define VERSION 0.40 /* A mettre a jour a chaque evolution */
+#define VERSION 0.60 /* A mettre a jour a chaque evolution */
 
 #define LBUF 255
 #define TRUE 1
@@ -90,7 +90,7 @@ int commande_externe(char ** cmd, int* n, int res, int rss, int isDaemon)
 		perror(cmd[0]);
 		exit(3);
 	}
-    if(rss == 0)
+    if(rss == 0 && !isDaemon)
     {
         while(wait(&i) != pid);
     }
@@ -139,24 +139,6 @@ int commande_interne(char** cmd, int * n)
 		rep = getcwd(NULL,0);
 		printf("%s\n",rep);
 		free(rep);
-		return 1;
-	}
-	if (strcmp(cmd[*n],"pid") == 0) {
-	(*n)++;
-		if (cmd[*n] != NULL && strcmp(cmd[*n], "-a") == 0) {
-			printf("PID: %i\tPPID: %i\tUID: %i\tSID: %i\n", getpid(), getppid(), getuid(), getsid(getpid()));
-		} else {
-	 		printf("%i\n", getpid());
-		}
-		return 1;
-	}
-	if (strcmp(cmd[*n],"echo") == 0) {
-	(*n)++;
-		while (cmd[*n] != NULL) {
-			printf("%s ", cmd[*n]);
-			(*n)++;
-		}
-		printf("\n");
 		return 1;
 	}
 	if(strcmp(cmd[*n],"env") == 0){        
@@ -243,9 +225,10 @@ int is_sepa(char c)
 	return 0;
 }
 
-void execute(int cd, int cf, char**P, int res, int rss)
+void execute(int cd, int cf, char**P, int res, int rss, int isDaemon)
 {
-    int N = cf - cd + 1, it=0, Red=0, ired, flag, i, pid;
+    int N = cf - cd + 1;
+	int it=0, Red=0, ired, flag, i, pid;
     char ** cmd;
     int n =0;
 	printf("Command Debut : %d\n", cd);
@@ -260,7 +243,7 @@ void execute(int cd, int cf, char**P, int res, int rss)
     }
     
     cmd = (char **) malloc(sizeof(char*)* N);
-    for(i = cd; i< cf; i++)
+    for(i = cd; i < cf; i++)
     {
         if (Red) 
         { /* traitement de la redirection */
@@ -304,7 +287,7 @@ void execute(int cd, int cf, char**P, int res, int rss)
         printf("i :%d %s \n",i, cmd[i]);
     }*/
     printf("\n");
-    if(!commande_interne(cmd, &n))commande_externe(cmd, &n, res, rss);
+    if(!commande_interne(cmd, &n))commande_externe(cmd, &n, res, rss, isDaemon);
     free((void*)cmd);
 }
 
@@ -360,7 +343,7 @@ void traite_commande(char* buf)
 		{
             rss = 0;
             if(i > 0 && strcmp(P[i-1], "|") != 0) res =0;
-			if(P[i+1] == NULL || (strcmp(P[i], ";")== 0) || (strcmp(P[i], "|") == 0) || (strcmp(P[i], "&") == 0)
+			if(P[i+1] == NULL || (strcmp(P[i], ";")== 0) || (strcmp(P[i], "|") == 0) || (strcmp(P[i], "&")) == 0)
 			{   
                 if(strcmp(P[i], "|") == 0)
                 {
@@ -371,13 +354,19 @@ void traite_commande(char* buf)
                     }
                     res = pip[0];
                     rss = pip[1];
-                    execute(cd,cf, P,0, rss);
+                    execute(cd,cf, P,0, rss, FALSE);
+					//i+=1;
                 }
+				else if(strcmp(P[i], "&") == 0)
+				{
+					cf = i;
+					execute(cd, cf, P, res, 0, TRUE);
+				}
                 else
                 {
 				    if(strcmp(P[i],";") == 0) cf = i;
 				    else cf = i+1;
-                    execute(cd, cf, P, res, 0);
+                    execute(cd, cf, P, res, 0, FALSE);
 				}
                 cd = i+1;
 			}			
