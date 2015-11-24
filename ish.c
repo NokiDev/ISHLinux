@@ -11,7 +11,7 @@
 
 #include "tools.h"
 
-#define VERSION 0.60 /* A mettre a jour a chaque evolution */
+#define VERSION 0.70 /* A mettre a jour a chaque evolution */
 
 #define LBUF 255
 #define TRUE 1
@@ -84,8 +84,8 @@ int commande_externe(char ** cmd, int* n, int res, int rss, int isDaemon)
                 close(i); dup(redir[i]);
             }   
         }
-        if(res) {dup2(res,0); close(res);}
-        if(rss) {dup2(rss,1); close(rss);}
+        if(res !=0) {dup2(res,0); close(res);}
+        if(rss !=0) {dup2(rss,1); close(rss);}
 		execvpe(cmd[0], cmd, environ);
 		perror(cmd[0]);
 		exit(3);
@@ -94,8 +94,8 @@ int commande_externe(char ** cmd, int* n, int res, int rss, int isDaemon)
     {
         while(wait(&i) != pid);
     }
-    if(rss) close(rss);
-    if(res) close(rss);
+    if(rss) {close(rss);}
+    if(res) {close(res);}
     return 1;
 }
 
@@ -104,12 +104,20 @@ int commande_externe(char ** cmd, int* n, int res, int rss, int isDaemon)
 int commande_interne(char** cmd, int * n)
 {
 	char *rep;
+	int i;
+	for(i =0; i<3; i++)
+    {
+        if(redir[i] != 0)
+        {
+            close(i); dup(redir[i]);
+        } 
+    }
 	if(strstr(cmd[*n], "=") != NULL)
 	{
 		int err = lire_params_env(cmd,n);
 		if(err  == -1)
 		{
-			printf("Error it's [NAME=VALUE]\n");
+			fprintf(stderr,"Error it's [NAME=VALUE]\n");
 		}
 		else
 		{
@@ -131,13 +139,13 @@ int commande_interne(char** cmd, int * n)
 	}
 	if (strcmp(cmd[*n],"vers") == 0) {
         (*n)++;
-		printf("ish version %1.2f\n",(float)VERSION);
+		fprintf(stdout,"ish version %1.2f\n",(float)VERSION);
 		return 1;
 	}
 	if (strcmp(cmd[*n],"pwd") == 0) {// Commande pwd
         (*n)++;
 		rep = getcwd(NULL,0);
-		printf("%s\n",rep);
+		fprintf(stdout,"%s\n",rep);
 		free(rep);
 		return 1;
 	}
@@ -154,7 +162,7 @@ int commande_interne(char** cmd, int * n)
             int err = lire_params_env(cmd,n);
             if(err == -1)
             {
-				printf("Error, use of env is : $env [NAME=VALUE] command\n");
+				fprintf(stderr,"Error, use of env is : $env [NAME=VALUE] command\n");
                 returnVal= err;
             }
             else
@@ -162,7 +170,7 @@ int commande_interne(char** cmd, int * n)
                 int j;
 			    for(j = 0; name[j] != NULL; j++)
 			    {
-					printf("%s=%s", name[j], value[j]);
+					fprintf(stderr,"%s=%s", name[j], value[j]);
 				    int t=0;
 			        for(i = 0; tmpEnv[i] != NULL; i++)
 				    {
@@ -193,7 +201,7 @@ int commande_interne(char** cmd, int * n)
         if(returnVal == 1){      
             for(i =0; tmpEnv[i] != NULL; i++)
             {	
-                printf("%s\n", tmpEnv[i]);
+                fprintf(stdout,"%s\n", tmpEnv[i]);
             }
         }
         for(i=0; tmpEnv[i] != NULL; i++)
@@ -231,15 +239,15 @@ void execute(int cd, int cf, char**P, int res, int rss, int isDaemon)
 	int it=0, Red=0, ired, flag, i, pid;
     char ** cmd;
     int n =0;
-	printf("Command Debut : %d\n", cd);
+	/*printf("Command Debut : %d\n", cd);
 	printf("Command Fin : %d\n", cf);
-	for(i = 0; P[i]!= NULL; i++)
+	for(i = cd; i< cf; i++)
 	{
 		printf("P[%d] : %s\n", i, P[i]);
-	}
+	}*/
     for(i = 0; i < 3; i++)
     {
-         redir[i] = 0;    
+        redir[i] = 0;    
     }
     
     cmd = (char **) malloc(sizeof(char*)* N);
@@ -261,6 +269,12 @@ void execute(int cd, int cf, char**P, int res, int rss, int isDaemon)
                     ired = 0;
                     flag = O_RDONLY;
                     break;
+				case 4 :
+					ired = 2;
+					flag = O_WRONLY | O_CREAT;
+				case 5 :
+					ired = 2;
+					flag = O_WRONLY | O_CREAT | O_APPEND;
                 default :
                     fprintf(stderr,"Erreur code Red = %d !\n", Red);
             }
@@ -281,13 +295,10 @@ void execute(int cd, int cf, char**P, int res, int rss, int isDaemon)
         }
     }
     cmd[it]= NULL;
-    /*printf("it = %d, Contenu de tab : ", it);
-    for(i=0;cmd[i] != NULL;i++) {
-        if (tab[i] == NULL) break; 
-        printf("i :%d %s \n",i, cmd[i]);
-    }*/
-    printf("\n");
-    if(!commande_interne(cmd, &n))commande_externe(cmd, &n, res, rss, isDaemon);
+    if(!commande_interne(cmd, &n))
+	{
+		commande_externe(cmd, &n, res, rss, isDaemon);
+	}
     free((void*)cmd);
 }
 
@@ -304,7 +315,7 @@ int analyse_ligne(char *b)
 		    if (!is_sepa(*d)){break;}
 		    d++;
 	    }
-        if (*d == '\0')return 0; /* pas de premier mot */
+        if (*d == '\0')break; /* pas de premier mot */
         tmpP[i++]=d;
         
         /* on recherche la fin du mot */
@@ -333,18 +344,17 @@ void traite_commande(char* buf)
 {
     int N=analyse_ligne(buf);
 	if (N==0) {
-		//printf("in func traite_commande BUF : %s", buf);
-		//printf("la commande est vide !\n");
+		fprintf(stderr,"la commande est vide !\n");
 	}
 	else
 	{
-		int cd =0, cf = 0, i, res=0, rss=0, pip[2];
+		int cd =0, cf = 0, i, res=0, rss=0, pip[2], pipeB = 0;
 		for(i = 0; P[i] != NULL; i++)
 		{
-            rss = 0;
-            if(i > 0 && strcmp(P[i-1], "|") != 0) res =0;
 			if(P[i+1] == NULL || (strcmp(P[i], ";")== 0) || (strcmp(P[i], "|") == 0) || (strcmp(P[i], "&")) == 0)
 			{   
+				rss = 0;
+            	if(!pipeB) res = 0;
                 if(strcmp(P[i], "|") == 0)
                 {
                     cf = i;
@@ -354,22 +364,28 @@ void traite_commande(char* buf)
                     }
                     res = pip[0];
                     rss = pip[1];
+					pipeB = 1;
                     execute(cd,cf, P,0, rss, FALSE);
-					//i+=1;
                 }
 				else if(strcmp(P[i], "&") == 0)
 				{
 					cf = i;
+					pipeB = 0;
 					execute(cd, cf, P, res, 0, TRUE);
 				}
                 else
                 {
 				    if(strcmp(P[i],";") == 0) cf = i;
 				    else cf = i+1;
+					pipeB = 0;
                     execute(cd, cf, P, res, 0, FALSE);
 				}
                 cd = i+1;
 			}			
+		}
+		for(i = 0; i < 3; i++)
+		{
+			dup2(redir[i], i);  
 		}
         free((void*)P);
 	}
@@ -381,8 +397,8 @@ int main(int N, char *P[])
 	//signal(SIGINT, SIG_IGN); /* on ignore l'interruption du clavier (Ctrl + C)*/
 	signal(SIGTSTP, SIG_IGN);
 	system("clear");
-	printf("===============================WELCOME============================");
-	printf("\nTry to type a command\n");
+	fprintf(stdout,"===============================WELCOME============================");
+	fprintf(stdout,"\nTry to type a command\n");
 
 	while (RUN) {
 		env = environ;
@@ -390,17 +406,17 @@ int main(int N, char *P[])
 		char* rep = getcwd(NULL,0);
 		gethostname(host, LBUF);
 		if (strncmp(getenv("HOME"), rep, strlen(getenv("HOME"))) == 0) {
-		 	printf("%s@%s:~%s> ", getenv("LOGNAME"), host, rep);
+		 	fprintf(stdout, "%s@%s:~%s> ", getenv("LOGNAME"), host, rep);
 		} else {
-		 	printf("%s@%s:%s> ", getenv("LOGNAME"), host, rep);
+		 	fprintf(stdout,"%s@%s:%s> ", getenv("LOGNAME"), host, rep);
 		}
 		free((void*)rep);
 		fflush(stdout);
 
 		if (lire_ligne(0,buf,LBUF) < 0)
-		printf("La taille de la ligne est limitee a %d car. !\n",LBUF);
+		fprintf(stderr,"La taille de la ligne est limitee a %d car. !\n",LBUF);
 		else traite_commande(buf);
 	}
-	printf("-Exit-\n");
+	fprintf(stdout,"-Exit-\n");
 	return 0;
 }
