@@ -1,421 +1,447 @@
 /* ish.c : Ingesup Shell */
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
 #include <string.h>
-#include <unistd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+#include <unistd.h>
 
+#include "defines.h"
 #include "tools.h"
+#include "manifest.h"
 
-#define VERSION 0.70 /* A mettre a jour a chaque evolution */
+extern char **environ;
 
-#define LBUF 255
-#define TRUE 1
-#define FALSE 0
+extern int execvpe(const char *, char **const, char **const);
 
-extern char ** environ;
-
-int RUN=1; /* RUN doit être mis a zero pour stopper le shell */
-char ** env;
+BOOL RUN = TRUE; /* RUN doit être mis a zero pour stopper le shell */
+char **env;
 char buf[LBUF];
 char test[LBUF];
-static int redir[3];
 
-char** name, ** value;
-int lire_params_env(char** cmd, int * n) 
-{
-	int i =0;
-	name = (char **)malloc(sizeof(char*));
-	value = (char **)malloc(sizeof(char*));
-	while(cmd[*n]!=NULL)
-	{
-        char * d;
-	    d=cmd[*n];
-		name[i] = d;
 
-		while(*d != '\0'){
-			if(*d == '=')break;
-			d++;
-		}
-		if(*d == '\0')
-        {
+static int redirectionOperators[3];
+
+char **name, **value;
+
+int readEnvironmentParameters(char **cmd, int *n) {
+    int i = 0;
+
+    name = (char **) malloc(sizeof(char *));
+    value = (char **) malloc(sizeof(char *));
+    while (cmd[*n] != NULL) {
+        char *d;
+        d = cmd[*n];
+        name[i] = d;
+
+        while (*d != '\0') {
+            if (*d == '=')
+                break;
+            d++;
+        }
+        if (*d == '\0') {
             return 1;
         }
-		*d = '\0';
-		d++;
-        if(*d == '\0')
-        {
+        *d = '\0';
+        d++;
+        if (*d == '\0') {
             free(name);
             return -1;
         }
-		value[i] = d;
-		
-		i++;
+        value[i] = d;
+
+        i++;
         (*n)++;
-		name = (char**)realloc((void*)name, sizeof(char*)* i+1);
-		value = (char**)realloc((void*)value, sizeof(char*)*i+1);
-	}
-	name[i] = NULL;
-	value[i] = NULL;
+        name = (char **) realloc((void *) name, sizeof(char *) * i + 1);
+        value = (char **) realloc((void *) value, sizeof(char *) * i + 1);
+    }
+    name[i] = NULL;
+    value[i] = NULL;
     return 0;
 }
 
-
-int commande_externe(char ** cmd, int* n, int res, int rss, int isDaemon)
+int externalCommand(char **cmd, int *n, int res, int rss, int isDaemon)
 {
     int pid;
     int i;
-	pid = fork();
-	if(pid == -1)
-    {
-        perror("fork"); 
-		return -1;
+    pid = fork();
+    if (pid == -1) {
+        perror("fork");
+        return -1;
     }
-    if(pid == 0)
-	{
-        for(i =0; i<3; i++)
-        {
-            if(redir[i] != 0)
-            {
-                close(i); dup(redir[i]);
-            }   
+    if (pid == 0) {
+        for (i = 0; i < 3; i++) {
+            if (redirectionOperators[i] != 0) {
+                close(i);
+                dup(redirectionOperators[i]);
+            }
         }
-        if(res !=0) {dup2(res,0); close(res);}
-        if(rss !=0) {dup2(rss,1); close(rss);}
-		execvpe(cmd[0], cmd, environ);
-		perror(cmd[0]);
-		exit(3);
-	}
-    if(rss == 0 && !isDaemon)
-    {
-        while(wait(&i) != pid);
+        if (res != 0) {
+            dup2(res, 0);
+            close(res);
+        }
+        if (rss != 0) {
+            dup2(rss, 1);
+            close(rss);
+        }
+        execvpe(cmd[0], cmd, environ);
+        perror(cmd[0]);
+        exit(3);
     }
-    if(rss) {close(rss);}
-    if(res) {close(res);}
+    if (rss == 0 && !isDaemon) {
+        while (wait(&i) != pid);
+    }
+    if (rss) {
+        close(rss);
+    }
+    if (res) {
+        close(res);
+    }
     return 1;
 }
 
-/* cette fonction regarde si la commande c est interne et l'execute en 
-   retournant VRAI sinon elle retourne FAUX */
-int commande_interne(char** cmd, int * n)
-{
-	char *rep;
-	int i;
-	for(i =0; i<3; i++)
-    {
-        if(redir[i] != 0)
-        {
-            close(i); dup(redir[i]);
-        } 
+
+void clearRedirectionOperators() {
+    for (int i = 0; i < 3; i++) {
+        if (redirectionOperators[i] != 0) {
+            close(i);
+            dup(redirectionOperators[i]);
+        }
     }
-	if(strstr(cmd[*n], "=") != NULL)
-	{
-		int err = lire_params_env(cmd,n);
-		if(err  == -1)
-		{
-			fprintf(stderr,"Error it's [NAME=VALUE]\n");
-		}
-		else
-		{
-			int i;
-			int j;
-			for(j = 0; name[j] != NULL; j++)
-			{
-				setenv(name[j], value[j], 1);
-			}
-		    free((void*)name);
-		    free((void*)value);
-		}
-		return 1;	
-	}
-	if (strcmp(cmd[*n],"exit") == 0) {// cas le la commande interne exit 
+}
+
+int environmentAssignment(char** cmd, int*n) {
+    if (readEnvironmentParameters(cmd, n)) {
+        fprintf(stderr, "Error it's [NAME=VALUE]\n");
+    } else {
+        int j;
+        for (j = 0; name[j] != NULL; j++) {
+            setenv(name[j], value[j], 1);
+        }
+        free((void *) name);
+        free((void *) value);
+    }
+}
+
+/*! \brief Check if the command is present internally in the program
+ *  \param[in] cmd, line typed by the user. contains cmd, and args splitted by '\0'
+ *  \param[in] n, current pointer on the cmd.
+ *  \return BOOL, False if the command is not found or an error has been encountered, True otherwise
+ */
+BOOL internalCommand(char **cmd, int *n) {
+    char *rep;
+
+    clearRedirectionOperators();
+
+    if (strstr(cmd[*n], "=") != NULL) {
+        environmentAssignment(cmd, n);
+        return TRUE;
+    }
+    if (strcmp(cmd[*n], "exit") == 0) { // cas le la commande interne exit
         (*n)++;
-		RUN=0;
-		return 1;
-	}
-	if (strcmp(cmd[*n],"vers") == 0) {
+        RUN = 0;
+        return TRUE;
+    }
+    if (strcmp(cmd[*n], "version") == 0) {
         (*n)++;
-		fprintf(stdout,"ish version %1.2f\n",(float)VERSION);
-		return 1;
-	}
-	if (strcmp(cmd[*n],"pwd") == 0) {// Commande pwd
+        fprintf(stdout, "version %s\n", Shell_VERSION);
+        return TRUE;
+    }
+    if (strcmp(cmd[*n], "pwd") == 0) { // Commande pwd
         (*n)++;
-		rep = getcwd(NULL,0);
-		fprintf(stdout,"%s\n",rep);
-		free(rep);
-		return 1;
-	}
-	if(strcmp(cmd[*n],"env") == 0){        
+        rep = getcwd(NULL, 0);
+        fprintf(stdout, "%s\n", rep);
+        free(rep);
+        return TRUE;
+    }
+    if (strcmp(cmd[*n], "env") == 0) {
         (*n)++;
-        int i =0;     
-        int returnVal = 1;   
-        while(env[i] != NULL){ i++;}
-		char** tmpEnv = (char**)malloc(sizeof(char*)* i+1);
-        for(i = 0; env[i] != NULL; i++){ tmpEnv[i] = strdup(env[i]);}       
+        int i = 0;
+        BOOL returnVal = TRUE;
+        while (env[i] != NULL) {
+            i++;
+        }
+        char **tmpEnv = (char **) malloc(sizeof(char *) * i + 1);
+        for (i = 0; env[i] != NULL; i++) {
+            tmpEnv[i] = strdup(env[i]);
+        }
         tmpEnv[i] = NULL;
-        if(cmd[*n] != NULL)
-        {
-            int err = lire_params_env(cmd,n);
-            if(err == -1)
-            {
-				fprintf(stderr,"Error, use of env is : $env [NAME=VALUE] command\n");
-                returnVal= err;
-            }
-            else
-            {
+        if (cmd[*n] != NULL) {
+            int err = readEnvironmentParameters(cmd, n);
+            if (err == -1) {
+                fprintf(stderr, "Error, use of env is : $env [NAME=VALUE] command\n");
+                returnVal = err;
+            } else {
                 int j;
-			    for(j = 0; name[j] != NULL; j++)
-			    {
-					fprintf(stderr,"%s=%s", name[j], value[j]);
-				    int t=0;
-			        for(i = 0; tmpEnv[i] != NULL; i++)
-				    {
-					    if(strncmp(tmpEnv[i],name[j],strlen(name[j]))==0)
-					    {
-						    snprintf(test, sizeof test, "%s=%s", name[j], value[j]);
-					        free(tmpEnv[i]);
-                        	tmpEnv[i] = strdup(test);
-					        t=1;
-					    }
-				    }
-				    if(!t)
-				    {
-					    snprintf(test, sizeof test, "%s=%s", name[j], value[j]);
+                for (j = 0; name[j] != NULL; j++) {
+                    fprintf(stderr, "%s=%s", name[j], value[j]);
+                    int t = 0;
+                    for (i = 0; tmpEnv[i] != NULL; i++) {
+                        if (strncmp(tmpEnv[i], name[j], strlen(name[j])) == 0) {
+                            snprintf(test, sizeof test, "%s=%s", name[j], value[j]);
+                            free(tmpEnv[i]);
+                            tmpEnv[i] = strdup(test);
+                            t = 1;
+                        }
+                    }
+                    if (!t) {
+                        snprintf(test, sizeof test, "%s=%s", name[j], value[j]);
                         tmpEnv[i] = strdup(test);
-                		tmpEnv = (char**)realloc((void*)tmpEnv, sizeof(char*)*(i+2));
-                        tmpEnv[i+1] = NULL;
-				    }
-			    }
+                        tmpEnv = (char **) realloc((void *) tmpEnv, sizeof(char *) * (i + 2));
+                        tmpEnv[i + 1] = NULL;
+                    }
+                }
                 free(name);
-	            free(value);
-				char ** tmpPtr = env;
-				env = tmpEnv;
-                if(err == 1){ returnVal = commande_interne(cmd,n);}
-				env = tmpPtr;
-            } 
-		}
-        if(returnVal == 1){      
-            for(i =0; tmpEnv[i] != NULL; i++)
-            {	
-                fprintf(stdout,"%s\n", tmpEnv[i]);
+                free(value);
+                char **tmpPtr = env;
+                env = tmpEnv;
+                if (err == 1) {
+                    returnVal = internalCommand(cmd, n);
+                }
+                env = tmpPtr;
             }
         }
-        for(i=0; tmpEnv[i] != NULL; i++)
-        {
+        if (returnVal == 1) {
+            for (i = 0; tmpEnv[i] != NULL; i++) {
+                fprintf(stdout, "%s\n", tmpEnv[i]);
+            }
+        }
+        for (i = 0; tmpEnv[i] != NULL; i++) {
             free(tmpEnv[i]);
         }
         free(tmpEnv);
-		return returnVal;
+        return returnVal;
     }
-	if (strcmp(cmd[*n],"cd") == 0) { // commande cd
-		(*n)++;
-        if (cmd[*n] == NULL) { //cd sans parametre 
-			rep = getenv("HOME");//je recupere le contenu de la variable HOME 
-		} else {  //je recupere le 1er parametre 
-		    rep = cmd[*n];
-		}
-		if (chdir(rep) < 0) perror(rep);
-		return 1;
-	}
-	return 0;
+    if (strcmp(cmd[*n], "cd") == 0) { // commande cd
+        (*n)++;
+        if (cmd[*n] == NULL) {  // cd sans parametre
+            rep = getenv("HOME"); // je recupere le contenu de la variable HOME
+        } else {                // je recupere le 1er parametre
+            rep = cmd[*n];
+        }
+        if (chdir(rep) < 0)
+            perror(rep);
+        return TRUE;
+    }
+    return FALSE;
 }
 
 /* fonction qui determine si un caractere est un separateur */
-int is_sepa(char c)
-{
-	if (c == ' ') return 1;
-	if (c == '\t') return 1;
-	if (c == '\n') return 1;
-	return 0;
+BOOL is_sepa(char c) {
+    if (c == ' ')
+        return TRUE;
+    if (c == '\t')
+        return TRUE;
+    if (c == '\n')
+        return TRUE;
+    return FALSE;
 }
 
-void execute(int cd, int cf, char**P, int res, int rss, int isDaemon)
-{
-    int N = cf - cd + 1;
-	int it=0, Red=0, ired, flag, i, pid;
-    char ** cmd;
-    int n =0;
-	/*printf("Command Debut : %d\n", cd);
-	printf("Command Fin : %d\n", cf);
-	for(i = cd; i< cf; i++)
-	{
-		printf("P[%d] : %s\n", i, P[i]);
-	}*/
-    for(i = 0; i < 3; i++)
-    {
-        redir[i] = 0;    
-    }
-    
-    cmd = (char **) malloc(sizeof(char*)* N);
-    for(i = cd; i < cf; i++)
-    {
-        if (Red) 
-        { /* traitement de la redirection */
-            switch(Red)
-            {
-                case 1 : /* cas du > */
+void execute(int cmdBegin, int cmdEnd, char **words, int redirectStdin, int redirectStdout, BOOL isDaemon) {
+    int NWords = cmdEnd - cmdBegin + 1;
+    int it = 0, Red = 0, ired, flag, i;
+    char **cmd;
+    int n = 0;
+
+    clearRedirectionOperators();
+
+    // Preparsing the command line to catch redirection signs.
+    cmd = (char **) malloc(sizeof(char *) * NWords);
+    for (i = cmdBegin; i < cmdEnd; i++) {
+        if (Red) { /* traitement de la redirection */
+            switch (Red) {
+                case 1: /* cas du > */
                     ired = 1;
                     flag = O_WRONLY | O_CREAT;
                     break;
-                case 2 : /* cas du >> */
+                case 2: /* cas du >> */
                     ired = 1;
                     flag = O_WRONLY | O_CREAT | O_APPEND;
                     break;
-                case 3 : /* cas du < */
+                case 3: /* cas du < */
                     ired = 0;
                     flag = O_RDONLY;
                     break;
-				case 4 :
-					ired = 2;
-					flag = O_WRONLY | O_CREAT;
-				case 5 :
-					ired = 2;
-					flag = O_WRONLY | O_CREAT | O_APPEND;
-                default :
-                    fprintf(stderr,"Erreur code Red = %d !\n", Red);
+                case 4:
+                    ired = 2;
+                    flag = O_WRONLY | O_CREAT;
+                case 5:
+                    ired = 2;
+                    flag = O_WRONLY | O_CREAT | O_APPEND;
+                default:
+                    fprintf(stderr, "Erreur code Red = %d !\n", Red);
             }
-            if ((redir[ired] = open(P[i],flag, 0644)) == -1) 
-            {
-               perror(P[i]);
+            if ((redirectionOperators[ired] = open(words[i], flag, 0644)) == -1) {
+                perror(words[i]);
             }
-            Red=0;
-        }
-        else 
-        { /* remplissage de tab */
-            if (strcmp(P[i],">") == 0) { Red=1; continue; }
-            if (strcmp(P[i],">>") == 0) { Red=2; continue; }
-            if (strcmp(P[i],"<") == 0) { Red=3; continue; }
-            if (strcmp(P[i],"2>") == 0) { Red=4; continue; }
-            if (strcmp(P[i],"2>>") == 0) { Red=5; continue; }
-            cmd[it++]=P[i];
+            Red = 0;
+        } else { /* remplissage de tab */
+            if (strcmp(words[i], ">") == 0) {
+                Red = 1;
+                continue;
+            }
+            if (strcmp(words[i], ">>") == 0) {
+                Red = 2;
+                continue;
+            }
+            if (strcmp(words[i], "<") == 0) {
+                Red = 3;
+                continue;
+            }
+            if (strcmp(words[i], "2>") == 0) {
+                Red = 4;
+                continue;
+            }
+            if (strcmp(words[i], "2>>") == 0) {
+                Red = 5;
+                continue;
+            }
+            cmd[it++] = words[i];
         }
     }
-    cmd[it]= NULL;
-    if(!commande_interne(cmd, &n))
-	{
-		commande_externe(cmd, &n, res, rss, isDaemon);
-	}
-    free((void*)cmd);
+    cmd[it] = NULL;
+    if (!internalCommand(cmd, &n)) {
+        externalCommand(cmd, &n, redirectStdin, redirectStdout, isDaemon);
+    }
+    free((void *) cmd);
 }
-char ** P;
-int analyse_ligne(char *b)
-{
-    int i =0;
-    char * d = b;
-    char* tmpP[255];
-	while(1)
-    {
+
+
+/* Adds null byte as a replacement for a separator present in the separator character set.
+ * \param[in] Buffer to split
+ * \param[out] Words, computed from the buffer passed in
+ * return number of words.
+ *
+ */
+int bufferToWords(char *b, char ***words) {
+    int i = 0;
+    char *d = b;
+    char *tmpP[LBUF];
+    while (TRUE) {
         /* on recherche le debut du premier mot */
-	    while (*d != '\0') {
-		    if (!is_sepa(*d)){break;}
-		    d++;
-	    }
-        if (*d == '\0')break; /* pas de premier mot */
-        tmpP[i++]=d;
-        
+        while (*d != '\0') {
+            if (!is_sepa(*d)) {
+                break;
+            }
+            d++;
+        }
+        if (*d == '\0')
+            break; /* pas de premier mot */
+        tmpP[i++] = d;
+
         /* on recherche la fin du mot */
         while (*d != '\0') {
-	        if (is_sepa(*d)) break;
-	        d++;
+            if (is_sepa(*d))
+                break;
+            d++;
         }
         /* si c'est la fin de la chaine on casse la boucle*/
-		if(*d == '\0')break;
-		*d = '\0';
-		d++;
-        
+        if (*d == '\0')
+            break;
+        *d = '\0';
+        d++;
     }
     tmpP[i] = NULL;
-    P =(char**)malloc(sizeof(char*)*(i+1));
-    for(i =0; tmpP[i] != NULL; i++)
-    {
-        P[i] = tmpP[i];
+    *words = (char **) malloc(sizeof(char *) * (i + 1));
+    for (i = 0; tmpP[i] != NULL; i++) {
+        *words[i] = tmpP[i];
     }
-    P[i] = NULL;
-	return i;
+    words[i] = NULL;
+    return i;
 }
 
+void handleInput(char *buf) {
+    char **words = NULL;
+    if (bufferToWords(buf, &words) == 0 || words == NULL) {
+        fprintf(stderr, "la commande est vide !\n");
+    }
+    else {
+        int cmdBegin = 0, cmdEnd = 0, i = 0, redirectStdin = 0, redirectStdout = 0, pip[2];
+        BOOL isPiped = FALSE;
+        BOOL isDaemon = FALSE;
 
-void traite_commande(char* buf)
-{
-    int N=analyse_ligne(buf);
-	if (N==0) {
-		fprintf(stderr,"la commande est vide !\n");
-	}
-	else
-	{
-		int cd =0, cf = 0, i, res=0, rss=0, pip[2], pipeB = 0;
-		for(i = 0; P[i] != NULL; i++)
-		{
-			if(P[i+1] == NULL || (strcmp(P[i], ";")== 0) || (strcmp(P[i], "|") == 0) || (strcmp(P[i], "&")) == 0)
-			{   
-				rss = 0;
-            	if(!pipeB) res = 0;
-                if(strcmp(P[i], "|") == 0)
-                {
-                    cf = i;
-                    if(pipe(pip) != 0)
-                    {
-                        perror("pipe"); exit(3);
+        for (i = 0; words[i] != NULL; i++) {
+            if (words[i + 1] == NULL ||
+                (strcmp(words[i], ";") == 0) ||
+                (strcmp(words[i], "|") == 0) ||
+                (strcmp(words[i], "&")) == 0) {
+
+                redirectStdout = 0;
+                if (!isPiped)
+                    redirectStdin = 0;
+
+                if (strcmp(words[i], "|") == 0) { // Pipe Case
+                    cmdEnd = i;
+                    if (pipe(pip) != 0) {
+                        perror("pipe");
+                        exit(3);
                     }
-                    res = pip[0];
-                    rss = pip[1];
-					pipeB = 1;
-                    execute(cd,cf, P,0, rss, FALSE);
+                    redirectStdin = pip[0];
+                    redirectStdout = pip[1];
+                    isPiped = TRUE;
+                    execute(cmdBegin, cmdEnd, words, 0, redirectStdout, isDaemon);
+                } else if (strcmp(words[i], "&") == 0) { // Daemon Case
+                    cmdEnd = i;
+                    isPiped = FALSE;
+                    isDaemon = TRUE;
+                    execute(cmdBegin, cmdEnd, words, redirectStdin, redirectStdout, isDaemon);
+                } else {
+                    if (strcmp(words[i], ";") == 0) // separator Case
+                        cmdEnd = i;
+                    else
+                        cmdEnd = i + 1;
+                    isPiped = FALSE;
+                    execute(cmdBegin, cmdEnd, words, redirectStdin, redirectStdout, isDaemon);
                 }
-				else if(strcmp(P[i], "&") == 0)
-				{
-					cf = i;
-					pipeB = 0;
-					execute(cd, cf, P, res, 0, TRUE);
-				}
-                else
-                {
-				    if(strcmp(P[i],";") == 0) cf = i;
-				    else cf = i+1;
-					pipeB = 0;
-                    execute(cd, cf, P, res, 0, FALSE);
-				}
-                cd = i+1;
-			}			
-		}
-		for(i = 0; i < 3; i++)
-		{
-			dup2(redir[i], i);  
-		}
-        free((void*)P);
-	}
+                cmdBegin = i + 1;
+            }
+        }
+        for (i = 0; i < 3; i++) {
+            dup2(redirectionOperators[i], i);
+        }
+    }
+    free((void *) words);
 }
 
-int main(int N, char *P[])
-{
-	/* initialisations diverses */
-	signal(SIGINT, SIG_IGN); /* on ignore l'interruption du clavier (Ctrl + C)*/
-	signal(SIGTSTP, SIG_IGN);
-	system("clear");
-	fprintf(stdout,"===============================WELCOME============================");
-	fprintf(stdout,"\nTry to type a command\n");
+void printLaunchMessage() {
+    fprintf(stdout, "===============================WELCOME============================");
+    fprintf(stdout, "\nTry to type a command\n");
+}
+/* Print the begining of a new line */
+void printNewLinePrefix() {
+    char hostname[LBUF];
+    char *currentDirectory = getcwd(NULL, 0);
 
-	while (RUN) {
-		env = environ;
-		char host[LBUF];
-		char* rep = getcwd(NULL,0);
-		gethostname(host, LBUF);
-		if (strncmp(getenv("HOME"), rep, strlen(getenv("HOME"))) == 0) {
-		 	fprintf(stdout, "%s@%s:~%s> ", getenv("LOGNAME"), host, rep);
-		} else {
-		 	fprintf(stdout,"%s@%s:%s> ", getenv("LOGNAME"), host, rep);
-		}
-		free((void*)rep);
-		fflush(stdout);
+    gethostname(hostname, LBUF);
+    if (strncmp(getenv("HOME"), currentDirectory, strlen(getenv("HOME"))) == 0) {
+        fprintf(stdout, "%s@%s:~%s> ", getenv("LOGNAME"), hostname, currentDirectory);
+    } else {
+        fprintf(stdout, "%s@%s:%s> ", getenv("LOGNAME"), hostname, currentDirectory);
+    }
+    free((void *) currentDirectory);
+}
 
-		if (lire_ligne(0,buf,LBUF) < 0)
-		fprintf(stderr,"La taille de la ligne est limitee a %d car. !\n",LBUF);
-		else traite_commande(buf);
-	}
-	fprintf(stdout,"-Exit-\n");
-	return 0;
+int main(int N, char *P[]) {
+    /* initialisations diverses */
+    signal(SIGINT, SIG_IGN); /* on ignore l'interruption du clavier (Ctrl + C)*/
+    signal(SIGTSTP, SIG_IGN);
+    system("clear");
+
+    printLaunchMessage();
+
+    while (RUN) {
+        env = environ;
+        printNewLinePrefix();
+
+        fflush(stdout);
+        if (read_line(0, buf, LBUF) < 0)
+            fprintf(stderr, "Command is too long, the line is limited to %d chars !\n", LBUF);
+        else
+            handleInput(buf);
+    }
+    fprintf(stdout, "-Exit-\n");
+    return 0;
 }

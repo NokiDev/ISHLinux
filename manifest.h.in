@@ -1,0 +1,19 @@
+//
+// Generated using CMAKE configure_file method.
+//
+
+#ifndef @PROJECT_NAME@_VERSION_H
+#define @PROJECT_NAME@_VERSION_H
+
+#define PROJECT_NAME @PROJECT_NAME@
+#define @PROJECT_NAME@_VERSION "@PROJECT_VERSION@"
+#define @PROJECT_NAME@_DESCRIPTION "@PROJECT_DESCRIPTION@"
+
+#define @PROJECT_NAME@_CONFIGURATION "@CMAKE_BUILD_TYPE@"
+// architecture build on (x86, x64, ARM).
+#define @PROJECT_NAME@_ARCH "x64"
+// OS on which the program has been builded for.
+#define @PROJECT_NAME@_OS "Linux"
+
+
+#endif //PROJECT_VERSION_H

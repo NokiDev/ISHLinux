@@ -3,7 +3,7 @@
 
 #include "tools.h"
 
-int lire_ligne(int fd, char* b, int t)
+int read_line(int fd, char* b, int t)
 {
 char * d, *f;
     d=b;
@@ -20,4 +20,3 @@ char * d, *f;
     *d = '\0';
     return (d - b);
 }
-
