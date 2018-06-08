@@ -6,7 +6,7 @@
 #define YnovShell_VERSION_H
 
 #define PROJECT_NAME YnovShell
-#define YnovShell_VERSION "0.0.0"
+#define YnovShell_VERSION "1.0.0"
 #define YnovShell_DESCRIPTION "Another shell"
 
 #define YnovShell_CONFIGURATION "Debug"
