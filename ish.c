@@ -9,59 +9,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "defines.h"
 #include "tools.h"
-#include "manifest.h"
+#include "commands.h"
 
-extern char **environ;
-
-extern int execvpe(const char *, char **const, char **const);
-
-BOOL RUN = TRUE; /* RUN doit être mis a zero pour stopper le shell */
-char **env;
 char buf[LBUF];
-char test[LBUF];
-
 
 static int redirectionOperators[3];
-
-char **name, **value;
-
-int readEnvironmentParameters(char **cmd, int *n) {
-    int i = 0;
-
-    name = (char **) malloc(sizeof(char *));
-    value = (char **) malloc(sizeof(char *));
-    while (cmd[*n] != NULL) {
-        char *d;
-        d = cmd[*n];
-        name[i] = d;
-
-        while (*d != '\0') {
-            if (*d == '=')
-                break;
-            d++;
-        }
-        if (*d == '\0') {
-            return 1;
-        }
-        *d = '\0';
-        d++;
-        if (*d == '\0') {
-            free(name);
-            return -1;
-        }
-        value[i] = d;
-
-        i++;
-        (*n)++;
-        name = (char **) realloc((void *) name, sizeof(char *) * i + 1);
-        value = (char **) realloc((void *) value, sizeof(char *) * i + 1);
-    }
-    name[i] = NULL;
-    value[i] = NULL;
-    return 0;
-}
 
 int externalCommand(char **cmd, int *n, int res, int rss, int isDaemon)
 {
@@ -113,120 +66,15 @@ void clearRedirectionOperators() {
     }
 }
 
-int environmentAssignment(char** cmd, int*n) {
-    if (readEnvironmentParameters(cmd, n)) {
-        fprintf(stderr, "Error it's [NAME=VALUE]\n");
-    } else {
-        int j;
-        for (j = 0; name[j] != NULL; j++) {
-            setenv(name[j], value[j], 1);
-        }
-        free((void *) name);
-        free((void *) value);
-    }
-}
-
 /*! \brief Check if the command is present internally in the program
  *  \param[in] cmd, line typed by the user. contains cmd, and args splitted by '\0'
  *  \param[in] n, current pointer on the cmd.
  *  \return BOOL, False if the command is not found or an error has been encountered, True otherwise
  */
 BOOL internalCommand(char **cmd, int *n) {
-    char *rep;
-
     clearRedirectionOperators();
 
-    if (strstr(cmd[*n], "=") != NULL) {
-        environmentAssignment(cmd, n);
-        return TRUE;
-    }
-    if (strcmp(cmd[*n], "exit") == 0) { // cas le la commande interne exit
-        (*n)++;
-        RUN = 0;
-        return TRUE;
-    }
-    if (strcmp(cmd[*n], "version") == 0) {
-        (*n)++;
-        fprintf(stdout, "version %s\n", Shell_VERSION);
-        return TRUE;
-    }
-    if (strcmp(cmd[*n], "pwd") == 0) { // Commande pwd
-        (*n)++;
-        rep = getcwd(NULL, 0);
-        fprintf(stdout, "%s\n", rep);
-        free(rep);
-        return TRUE;
-    }
-    if (strcmp(cmd[*n], "env") == 0) {
-        (*n)++;
-        int i = 0;
-        BOOL returnVal = TRUE;
-        while (env[i] != NULL) {
-            i++;
-        }
-        char **tmpEnv = (char **) malloc(sizeof(char *) * i + 1);
-        for (i = 0; env[i] != NULL; i++) {
-            tmpEnv[i] = strdup(env[i]);
-        }
-        tmpEnv[i] = NULL;
-        if (cmd[*n] != NULL) {
-            int err = readEnvironmentParameters(cmd, n);
-            if (err == -1) {
-                fprintf(stderr, "Error, use of env is : $env [NAME=VALUE] command\n");
-                returnVal = err;
-            } else {
-                int j;
-                for (j = 0; name[j] != NULL; j++) {
-                    fprintf(stderr, "%s=%s", name[j], value[j]);
-                    int t = 0;
-                    for (i = 0; tmpEnv[i] != NULL; i++) {
-                        if (strncmp(tmpEnv[i], name[j], strlen(name[j])) == 0) {
-                            snprintf(test, sizeof test, "%s=%s", name[j], value[j]);
-                            free(tmpEnv[i]);
-                            tmpEnv[i] = strdup(test);
-                            t = 1;
-                        }
-                    }
-                    if (!t) {
-                        snprintf(test, sizeof test, "%s=%s", name[j], value[j]);
-                        tmpEnv[i] = strdup(test);
-                        tmpEnv = (char **) realloc((void *) tmpEnv, sizeof(char *) * (i + 2));
-                        tmpEnv[i + 1] = NULL;
-                    }
-                }
-                free(name);
-                free(value);
-                char **tmpPtr = env;
-                env = tmpEnv;
-                if (err == 1) {
-                    returnVal = internalCommand(cmd, n);
-                }
-                env = tmpPtr;
-            }
-        }
-        if (returnVal == 1) {
-            for (i = 0; tmpEnv[i] != NULL; i++) {
-                fprintf(stdout, "%s\n", tmpEnv[i]);
-            }
-        }
-        for (i = 0; tmpEnv[i] != NULL; i++) {
-            free(tmpEnv[i]);
-        }
-        free(tmpEnv);
-        return returnVal;
-    }
-    if (strcmp(cmd[*n], "cd") == 0) { // commande cd
-        (*n)++;
-        if (cmd[*n] == NULL) {  // cd sans parametre
-            rep = getenv("HOME"); // je recupere le contenu de la variable HOME
-        } else {                // je recupere le 1er parametre
-            rep = cmd[*n];
-        }
-        if (chdir(rep) < 0)
-            perror(rep);
-        return TRUE;
-    }
-    return FALSE;
+    return run_internal_command(cmd, n);
 }
 
 /* fonction qui determine si un caractere est un separateur */
