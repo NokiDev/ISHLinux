@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(YnovShell VERSION 0.0.0
+project(YnovShell VERSION 1.0.0
         LANGUAGES C
         DESCRIPTION
             "Another shell"
